@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-[#070713] text-slate-100 antialiased;
+  }
+
+  select option {
+    background-color: #070713;
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  .container-app {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+  }
+
+  .glass {
+    @apply rounded-2xl border border-white/10 bg-white/5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition;
+  }
+
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white shadow-[0_16px_50px_rgba(99,102,241,0.22)] hover:opacity-95;
+  }
+
+  .btn-secondary {
+    @apply btn border border-white/10 bg-white/5 text-white/90 hover:bg-white/10;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-white/80 hover:bg-white/10;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/90 outline-none ring-0 transition placeholder:text-white/40 focus:border-cyan-400/40 focus:bg-white/10;
+  }
+
+  .label {
+    @apply mb-2 block text-sm font-semibold text-white/75;
+  }
+}
