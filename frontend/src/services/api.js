@@ -1,7 +1,11 @@
 import axios from "axios";
 
+const envBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "";
+const fallbackBaseUrl = import.meta.env.DEV ? "http://localhost:5000" : window.location.origin;
+const baseURL = String(envBaseUrl || fallbackBaseUrl).replace(/\/+$/, "");
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://smart-skill-backend-q4ud.onrender.com",
+  baseURL,
   timeout: 15000,
   withCredentials: false,
 });
