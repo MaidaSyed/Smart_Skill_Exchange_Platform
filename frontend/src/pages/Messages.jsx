@@ -48,6 +48,7 @@ export default function Messages() {
   const [thread, setThread] = useState([]);
   const [draft, setDraft] = useState("");
   const [blockedReason, setBlockedReason] = useState("");
+  const [chatHint, setChatHint] = useState("");
 
   const active = useMemo(
     () => conversations.find((c) => String(c.other_user_id) === String(activeId)) || null,
@@ -66,18 +67,23 @@ export default function Messages() {
       if (!userId || !otherUserId) return Promise.resolve();
       setThreadLoading(true);
       return getThread(userId, otherUserId, { limit: 120 })
-        .then((rows) => {
+        .then((out) => {
+          const rows = out?.messages || [];
+          const chat = out?.chat || null;
           setThread(rows.slice().reverse());
-          setBlockedReason("");
+          setBlockedReason(chat && chat.canSend === false ? chat.reason || "Session chat has ended." : "");
+          setChatHint(chat?.mode === "final" ? "Session ended — one final message is allowed." : "");
           return markThreadRead(userId, otherUserId).catch(() => null);
         })
         .catch((e) => {
           if (e?.response?.status === 403) {
             setBlockedReason(e?.message || "Chat is closed.");
             setThread([]);
+            setChatHint("");
             return;
           }
           setBlockedReason("");
+          setChatHint("");
           setError(e?.message || "Failed to load messages");
         })
         .finally(() => setThreadLoading(false));
@@ -241,19 +247,28 @@ export default function Messages() {
                   <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-4 text-sm font-semibold text-amber-100">
                     {blockedReason}
                   </div>
-                ) : thread.length ? (
-                  thread.map((m) => (
-                    <Bubble
-                      key={m.id}
-                      mine={String(m.sender_id) === String(userId)}
-                      text={m.message_text}
-                      ts={m.created_at}
-                    />
-                  ))
                 ) : (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-semibold text-white/70">
-                    No messages yet. Say hello.
-                  </div>
+                  <>
+                    {chatHint ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/75">
+                        {chatHint}
+                      </div>
+                    ) : null}
+                    {thread.length ? (
+                      thread.map((m) => (
+                        <Bubble
+                          key={m.id}
+                          mine={String(m.sender_id) === String(userId)}
+                          text={m.message_text}
+                          ts={m.created_at}
+                        />
+                      ))
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-semibold text-white/70">
+                        No messages yet. Say hello.
+                      </div>
+                    )}
+                  </>
                 )
               ) : (
                 <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-semibold text-white/70">
@@ -270,6 +285,8 @@ export default function Messages() {
                     activeId
                       ? blockedReason
                         ? "Chat is closed"
+                        : chatHint
+                          ? "Write your final message…"
                         : "Write a message…"
                       : "Select a conversation first"
                   }

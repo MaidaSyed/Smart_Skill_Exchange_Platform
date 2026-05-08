@@ -649,7 +649,7 @@ export default function Admin() {
                               : "skill exchange"}
                           </td>
                           <td className="px-4 py-4">{formatDateTimeLocal(s.chat_expires_at)}</td>
-                          <td className="px-4 py-4">{s.status}</td>
+                          <td className="px-4 py-4">{s.timing_status || s.db_status || "—"}</td>
                         </tr>
                       ))
                     ) : (

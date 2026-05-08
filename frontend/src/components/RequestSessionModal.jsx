@@ -27,7 +27,7 @@ export default function RequestSessionModal({ open, onClose, teacher }) {
     message: "",
     preferredDate: "",
     preferredStartTime: "",
-    durationMinutes: 60,
+    durationMinutes: 4,
     exchangeType: "skill",
     offeredSkillId: "",
     offeredCreditAmount: "",
@@ -235,9 +235,9 @@ export default function RequestSessionModal({ open, onClose, teacher }) {
                     setForm((f) => ({ ...f, durationMinutes: e.target.value }))
                   }
                 >
-                  <option value={30}>30 min</option>
-                  <option value={60}>60 min</option>
-                  <option value={90}>90 min</option>
+                  <option value={2}>2 min</option>
+                  <option value={4}>4 min</option>
+                  <option value={6}>6 min</option>
                 </select>
               </div>
 

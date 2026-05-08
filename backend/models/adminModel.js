@@ -198,19 +198,28 @@ async function mergeSkills({ fromSkillId, toSkillId }) {
 async function listSessions({ filter = null, limit = 200 }) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(400, Number(limit))) : 200;
   const values = [];
-  let idx = 1;
   const filters = [];
   if (filter === "completed") {
-    filters.push("s.chat_expires_at IS NOT NULL AND now() > s.chat_expires_at");
+    filters.push("now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))");
+  } else if (filter === "active") {
+    filters.push("now() >= (s.scheduled_date::timestamp + s.start_time) AND now() < ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))");
   } else if (filter === "upcoming") {
-    filters.push("s.chat_expires_at IS NOT NULL AND now() <= s.chat_expires_at");
+    filters.push("now() < (s.scheduled_date::timestamp + s.start_time)");
   } else if (filter === "cancelled") {
     filters.push("s.status = 'cancelled'");
   }
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
   const result = await pool.query(
-    "SELECT s.id, s.request_id, s.learner_id, s.teacher_id, s.scheduled_date, s.start_time, s.end_time, s.duration_minutes, s.chat_enabled_at, s.chat_expires_at, s.status, lr.exchange_type, lr.offered_credit_amount, sk.name AS skill_name, " +
+    "SELECT s.id, s.request_id, s.learner_id, s.teacher_id, s.scheduled_date, s.start_time, s.end_time, s.duration_minutes, " +
+      "(s.scheduled_date::timestamp + s.start_time) AS start_at, " +
+      "((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) AS end_at, " +
+      "CASE " +
+      "WHEN s.status = 'cancelled' THEN 'cancelled' " +
+      "WHEN now() < (s.scheduled_date::timestamp + s.start_time) THEN 'upcoming' " +
+      "WHEN now() >= (s.scheduled_date::timestamp + s.start_time) AND now() < ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN 'active' " +
+      "ELSE 'completed' END AS timing_status, " +
+      "s.chat_enabled_at, s.chat_expires_at, s.status AS db_status, lr.exchange_type, lr.offered_credit_amount, sk.name AS skill_name, " +
       "COALESCE(tp.full_name,'Teacher') AS teacher_name, COALESCE(lp.full_name,'Learner') AS learner_name " +
       "FROM sessions s " +
       "JOIN learning_requests lr ON lr.id = s.request_id " +

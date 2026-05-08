@@ -35,15 +35,19 @@ async function getThread(req, res) {
     if (!ok) {
       return res.status(403).json({ ok: false, error: "Messaging not allowed with this user." });
     }
-    const canSend = await messagesModel.canSendMessage({ userId, otherUserId });
-    if (!canSend) {
+    const chat = await messagesModel.getChatSendState({ userId, otherUserId });
+    if (!chat?.canSend) {
       const expiredSessionId = await messagesModel.getLatestExpiredChatSessionId({ userId, otherUserId });
-      if (expiredSessionId) {
-        await messagesModel.ensureChatExpiredNotification({ userId, sessionId: expiredSessionId });
-      }
+      if (expiredSessionId) await messagesModel.ensureChatExpiredNotification({ userId, sessionId: expiredSessionId });
+    } else if (chat?.mode === "final") {
+      if (chat?.sessionId) await messagesModel.ensureChatExpiredNotification({ userId, sessionId: chat.sessionId });
     }
     const messages = await messagesModel.listMessages({ userId, otherUserId, limit });
-    return res.json({ ok: true, messages });
+    return res.json({
+      ok: true,
+      messages,
+      chat: chat || { canSend: false, mode: "closed", reason: "Session chat has ended." },
+    });
   } catch (error) {
     console.log(error.message);
     const details = devDetails(error);
@@ -79,9 +83,9 @@ async function send(req, res) {
     if (!canAccess) {
       return res.status(403).json({ ok: false, error: "Messaging not allowed with this user." });
     }
-    const canSend = await messagesModel.canSendMessage({ userId: senderId, otherUserId: receiverId });
-    if (!canSend) {
-      return res.status(403).json({ ok: false, error: "This session chat has expired." });
+    const chat = await messagesModel.getChatSendState({ userId: senderId, otherUserId: receiverId });
+    if (!chat?.canSend) {
+      return res.status(403).json({ ok: false, error: chat?.reason || "Session chat has ended." });
     }
 
     const message = await messagesModel.sendMessage({
@@ -92,7 +96,7 @@ async function send(req, res) {
       sessionId,
     });
     if (!message) {
-      return res.status(400).json({ ok: false, error: "Invalid message." });
+      return res.status(403).json({ ok: false, error: "Session chat has ended." });
     }
     return res.json({ ok: true, message });
   } catch (error) {

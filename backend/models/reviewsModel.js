@@ -12,14 +12,15 @@ async function createReview({
   if (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5) return null;
 
   const session = await pool.query(
-    "SELECT s.id, s.learner_id, s.teacher_id, s.chat_expires_at, lr.exchange_type " +
+    "SELECT s.id, s.learner_id, s.teacher_id, lr.exchange_type, " +
+      "((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) AS end_at, " +
+      "(now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))) AS ended " +
       "FROM sessions s JOIN learning_requests lr ON lr.id = s.request_id WHERE s.id = $1",
     [sessionId],
   );
   const s = session.rows?.[0] || null;
   if (!s) return null;
-  if (!s.chat_expires_at) return null;
-  if (new Date(s.chat_expires_at).getTime() > Date.now()) return null;
+  if (!s.ended) return null;
 
   const reviewer = String(reviewerId);
   const reviewed = String(reviewedUserId);
@@ -110,7 +111,7 @@ async function listPendingReviews({ userId }) {
       "JOIN user_skills us ON us.id = lr.user_skill_id " +
       "JOIN skills sk ON sk.id = us.skill_id " +
       "WHERE (s.learner_id = $1::uuid OR s.teacher_id = $1::uuid) " +
-      "AND now() >= (s.scheduled_date::timestamp + s.end_time)" +
+      "AND now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))" +
       "), required AS (" +
       "SELECT e.*, " +
       "CASE " +
@@ -140,7 +141,7 @@ async function hasPendingReviews({ userId }) {
       "SELECT s.id AS session_id, s.request_id, s.learner_id, s.teacher_id, lr.exchange_type " +
       "FROM sessions s JOIN learning_requests lr ON lr.id = s.request_id " +
       "WHERE (s.learner_id = $1::uuid OR s.teacher_id = $1::uuid) " +
-      "AND now() >= (s.scheduled_date::timestamp + s.end_time)" +
+      "AND now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))" +
       "), required AS (" +
       "SELECT e.session_id, " +
       "CASE " +

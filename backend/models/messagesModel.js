@@ -20,9 +20,8 @@ async function canSendMessage({ userId, otherUserId }) {
       "SELECT 1 FROM sessions s " +
       "WHERE ((s.learner_id = $1::uuid AND s.teacher_id = $2::uuid) OR (s.learner_id = $2::uuid AND s.teacher_id = $1::uuid)) " +
       "AND s.chat_enabled_at IS NOT NULL " +
-      "AND s.chat_expires_at IS NOT NULL " +
       "AND now() >= s.chat_enabled_at " +
-      "AND now() <= s.chat_expires_at" +
+      "AND now() < ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))" +
       ")" +
       ") AS ok",
     [userId, otherUserId],
@@ -36,10 +35,9 @@ async function getActiveChatSessionId({ userId, otherUserId }) {
       "FROM sessions s " +
       "WHERE ((s.learner_id = $1::uuid AND s.teacher_id = $2::uuid) OR (s.learner_id = $2::uuid AND s.teacher_id = $1::uuid)) " +
       "AND s.chat_enabled_at IS NOT NULL " +
-      "AND s.chat_expires_at IS NOT NULL " +
       "AND now() >= s.chat_enabled_at " +
-      "AND now() <= s.chat_expires_at " +
-      "ORDER BY s.chat_enabled_at DESC, s.id DESC " +
+      "AND now() < ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) " +
+      "ORDER BY ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) DESC, s.id DESC " +
       "LIMIT 1",
     [userId, otherUserId],
   );
@@ -52,13 +50,42 @@ async function getLatestExpiredChatSessionId({ userId, otherUserId }) {
       "FROM sessions s " +
       "WHERE ((s.learner_id = $1::uuid AND s.teacher_id = $2::uuid) OR (s.learner_id = $2::uuid AND s.teacher_id = $1::uuid)) " +
       "AND s.chat_enabled_at IS NOT NULL " +
-      "AND s.chat_expires_at IS NOT NULL " +
-      "AND now() > s.chat_expires_at " +
-      "ORDER BY s.chat_expires_at DESC, s.id DESC " +
+      "AND now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) " +
+      "ORDER BY ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) DESC, s.id DESC " +
       "LIMIT 1",
     [userId, otherUserId],
   );
   return result.rows?.[0]?.id || null;
+}
+
+async function getChatSendState({ userId, otherUserId }) {
+  const activeSessionId = await getActiveChatSessionId({ userId, otherUserId });
+  if (activeSessionId) {
+    return { canSend: true, mode: "active", sessionId: activeSessionId };
+  }
+
+  const expiredSessionId = await getLatestExpiredChatSessionId({ userId, otherUserId });
+  if (!expiredSessionId) {
+    return { canSend: false, mode: "closed", reason: "Session chat has ended." };
+  }
+
+  const used = await pool.query(
+    "WITH sess AS (" +
+      "SELECT id, ((scheduled_date::timestamp + start_time) + (COALESCE(duration_minutes, 60)::int * interval '1 minute')) AS end_at " +
+      "FROM sessions WHERE id = $1" +
+      ") " +
+      "SELECT EXISTS (" +
+      "SELECT 1 FROM messages m, sess s " +
+      "WHERE m.session_id = s.id AND m.sender_id = $2::uuid AND m.created_at >= s.end_at " +
+      "LIMIT 1" +
+      ") AS used",
+    [expiredSessionId, userId],
+  );
+  const alreadyUsed = Boolean(used.rows?.[0]?.used);
+  if (alreadyUsed) {
+    return { canSend: false, mode: "closed", reason: "Session chat has ended." };
+  }
+  return { canSend: true, mode: "final", sessionId: expiredSessionId };
 }
 
 async function ensureChatExpiredNotification({ userId, sessionId }) {
@@ -139,13 +166,12 @@ async function sendMessage({
   requestId = null,
   sessionId = null,
 }) {
-  const ok = await canSendMessage({ userId: senderId, otherUserId: receiverId });
-  if (!ok) return null;
-
   const trimmed = String(messageText || "").trim();
   if (!trimmed) return null;
 
-  const activeSessionId = sessionId || (await getActiveChatSessionId({ userId: senderId, otherUserId: receiverId }));
+  const state = await getChatSendState({ userId: senderId, otherUserId: receiverId });
+  if (!state?.canSend) return null;
+  const activeSessionId = sessionId || state.sessionId;
   if (!activeSessionId) return null;
 
   const inserted = await pool.query(
@@ -190,6 +216,7 @@ module.exports = {
   canSendMessage,
   getActiveChatSessionId,
   getLatestExpiredChatSessionId,
+  getChatSendState,
   ensureChatExpiredNotification,
   listConversations,
   listMessages,

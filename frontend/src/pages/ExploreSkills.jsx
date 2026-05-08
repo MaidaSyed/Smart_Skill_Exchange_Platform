@@ -189,7 +189,7 @@ export default function ExploreSkills() {
                     </div>
                     <div>
                       <div className="text-lg font-extrabold text-white">
-                        {r.full_name || "Anonymous"}
+                        {r.full_name || "User"}
                       </div>
                       <div className="mt-1 text-xs font-semibold text-white/55">
                         {r.role || "user"}

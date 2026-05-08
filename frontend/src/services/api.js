@@ -1,11 +1,7 @@
 import axios from "axios";
 
-const envBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "";
-const fallbackBaseUrl = import.meta.env.DEV ? "http://localhost:5000" : window.location.origin;
-const baseURL = String(envBaseUrl || fallbackBaseUrl).replace(/\/+$/, "");
-
 const api = axios.create({
-  baseURL,
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
   timeout: 15000,
   withCredentials: false,
 });
@@ -167,7 +163,10 @@ export async function getThread(userId, otherUserId, { limit } = {}) {
   const res = await api.get("/messages/thread", {
     params: { userId, otherUserId, limit },
   });
-  return res.data?.messages || [];
+  return {
+    messages: res.data?.messages || [],
+    chat: res.data?.chat || null,
+  };
 }
 
 export async function sendMessage({ senderId, receiverId, messageText, requestId, sessionId }) {

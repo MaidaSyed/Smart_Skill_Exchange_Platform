@@ -2,7 +2,15 @@ const pool = require("../db/pool.js");
 
 async function listSessionsForUser({ userId }) {
   const result = await pool.query(
-    "SELECT s.id, s.request_id, s.learner_id, s.teacher_id, s.scheduled_date, s.start_time, s.end_time, s.duration_minutes, s.chat_enabled_at, s.chat_expires_at, s.meeting_link, s.status, s.created_at, " +
+    "SELECT s.id, s.request_id, s.learner_id, s.teacher_id, s.scheduled_date, s.start_time, s.end_time, s.duration_minutes, " +
+      "(s.scheduled_date::timestamp + s.start_time) AS start_at, " +
+      "((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) AS end_at, " +
+      "CASE " +
+      "WHEN s.status = 'cancelled' THEN 'cancelled' " +
+      "WHEN now() < (s.scheduled_date::timestamp + s.start_time) THEN 'upcoming' " +
+      "WHEN now() >= (s.scheduled_date::timestamp + s.start_time) AND now() < ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN 'active' " +
+      "ELSE 'completed' END AS timing_status, " +
+      "s.chat_enabled_at, s.chat_expires_at, s.meeting_link, s.status AS db_status, s.created_at, " +
       "lr.message, lr.exchange_type, lr.offered_credit_amount, os.name AS offered_skill_name, " +
       "CASE " +
       "WHEN lr.exchange_type = 'credits' AND $1::uuid = s.learner_id THEN s.teacher_id " +
@@ -20,8 +28,8 @@ async function listSessionsForUser({ userId }) {
       "WHEN lr.exchange_type = 'skill' AND $1::uuid = s.teacher_id THEN s.learner_id " +
       "ELSE NULL END)" +
       ") END AS has_reviewed_required, " +
-      "CASE WHEN (s.scheduled_date::timestamp + s.end_time) IS NOT NULL AND now() >= (s.scheduled_date::timestamp + s.end_time) THEN true ELSE false END AS can_review_now, " +
-      "CASE WHEN s.chat_expires_at IS NOT NULL AND now() > s.chat_expires_at THEN true ELSE false END AS is_expired, " +
+      "CASE WHEN now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN true ELSE false END AS can_review_now, " +
+      "CASE WHEN now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN true ELSE false END AS is_expired, " +
       "us.proficiency, sk.name AS skill_name, sk.category, sk.skill_type, COALESCE(tp.full_name, 'Teacher') AS teacher_name, COALESCE(lp.full_name, 'Learner') AS learner_name " +
       "FROM sessions s " +
       "JOIN learning_requests lr ON lr.id = s.request_id " +

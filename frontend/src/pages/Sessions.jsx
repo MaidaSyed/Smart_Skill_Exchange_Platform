@@ -2,17 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import useAuth from "../context/useAuth.js";
 import { createReview, getSessions } from "../services/api.js";
-import { buildLocalDateTime, formatDateLocal, formatDateTimeLocal, formatTimeOfDay } from "../utils/datetime.js";
+import { buildLocalDateTime, formatDateLocal, formatDateTimeLocal, formatTimeLocal, formatTimeOfDay, toDate } from "../utils/datetime.js";
 
 const Motion = motion;
 
-function isChatActive(chatEnabledAt, chatExpiresAt) {
-  if (!chatEnabledAt || !chatExpiresAt) return false;
-  const a = new Date(chatEnabledAt).getTime();
-  const b = new Date(chatExpiresAt).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b)) return false;
-  const now = Date.now();
-  return now >= a && now <= b;
+function isChatActive(chatEnabledAt, endAtMs, nowMs) {
+  if (!chatEnabledAt || !Number.isFinite(endAtMs) || !Number.isFinite(nowMs)) return false;
+  const a = toDate(chatEnabledAt)?.getTime();
+  if (!Number.isFinite(a)) return false;
+  return nowMs >= a && nowMs < endAtMs;
 }
 
 function countdownLabel(msUntil) {
@@ -23,6 +21,34 @@ function countdownLabel(msUntil) {
   const minutes = totalMinutes % 60;
   if (hours <= 0) return `Starts in ${minutes}m`;
   return `Starts in ${hours}h ${String(minutes).padStart(2, "0")}m`;
+}
+
+function getTiming(session, nowMs) {
+  const dbStatus = String(session?.db_status || session?.status || "").toLowerCase();
+  if (dbStatus === "cancelled") return { status: "cancelled", startAtMs: Number.NaN, endAtMs: Number.NaN };
+
+  const startAtMs = session?.start_at ? toDate(session.start_at)?.getTime() : Number.NaN;
+  const endAtMs = session?.end_at ? toDate(session.end_at)?.getTime() : Number.NaN;
+
+  if (Number.isFinite(startAtMs) && Number.isFinite(endAtMs)) {
+    const status = nowMs < startAtMs ? "upcoming" : nowMs >= startAtMs && nowMs < endAtMs ? "active" : "completed";
+    return { status, startAtMs, endAtMs };
+  }
+
+  const start = buildLocalDateTime(session?.scheduled_date, session?.start_time);
+  const durationMinutes = Number(session?.duration_minutes) || 60;
+  const fallbackStartAtMs = start ? start.getTime() : Number.NaN;
+  const fallbackEndAtMs = start ? start.getTime() + durationMinutes * 60000 : Number.NaN;
+  const status =
+    Number.isFinite(fallbackStartAtMs) && Number.isFinite(fallbackEndAtMs)
+      ? nowMs < fallbackStartAtMs
+        ? "upcoming"
+        : nowMs >= fallbackStartAtMs && nowMs < fallbackEndAtMs
+          ? "active"
+          : "completed"
+      : "upcoming";
+
+  return { status, startAtMs: fallbackStartAtMs, endAtMs: fallbackEndAtMs };
 }
 
 export default function Sessions() {
@@ -56,7 +82,7 @@ export default function Sessions() {
   }, [load]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 20000);
+    const id = window.setInterval(() => setNowMs(Date.now()), 5000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -215,137 +241,141 @@ export default function Sessions() {
           </div>
         ) : (
           <div className="mt-8 grid gap-6 md:grid-cols-2">
-            {sessions.map((s) => (
-              <div key={s.id} className="glass p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-extrabold text-white">
-                      {s.skill_name}
+            {sessions.map((s) => {
+              const timing = getTiming(s, nowMs);
+              const statusText =
+                timing.status === "active"
+                  ? "Session Live Now"
+                  : timing.status === "completed"
+                    ? "Session Completed"
+                    : Number.isFinite(timing.startAtMs)
+                      ? countdownLabel(timing.startAtMs - nowMs)
+                      : "Upcoming";
+              const statusTone =
+                timing.status === "active"
+                  ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+                  : timing.status === "completed"
+                    ? "border-white/10 bg-white/10 text-white/80"
+                    : "border-amber-400/25 bg-amber-400/10 text-amber-100";
+
+              return (
+                <div key={s.id} className="glass p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-extrabold text-white">{s.skill_name}</div>
+                      <div className="mt-1 text-xs font-semibold text-white/60">
+                        {s.category || "Uncategorized"} · {s.skill_type || "General"} · L{s.proficiency}
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-white/60">
-                      {s.category || "Uncategorized"} · {s.skill_type || "General"} · L{s.proficiency}
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={["rounded-full border px-3 py-1 text-xs font-extrabold", statusTone].join(" ")}>
+                        {statusText}
+                      </div>
+                      {(() => {
+                        const chatOn = isChatActive(s.chat_enabled_at, timing.endAtMs, nowMs);
+                        return (
+                          <div
+                            className={[
+                              "rounded-full border px-3 py-1 text-[11px] font-extrabold",
+                              chatOn
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+                                : "border-amber-400/25 bg-amber-400/10 text-amber-100",
+                            ].join(" ")}
+                          >
+                            {chatOn ? "Chat Active" : "Chat Ended"}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-extrabold text-white/80">
-                      {s.status || "scheduled"}
+
+                  <div className="mt-4 grid gap-2 text-sm text-white/70">
+                    <div>
+                      <span className="font-extrabold text-white/85">Teacher:</span> {s.teacher_name || "Teacher"}
                     </div>
-                    <div
-                      className={[
-                        "rounded-full border px-3 py-1 text-[11px] font-extrabold",
-                        isChatActive(s.chat_enabled_at, s.chat_expires_at)
-                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
-                          : "border-amber-400/25 bg-amber-400/10 text-amber-100",
-                      ].join(" ")}
-                    >
-                      {isChatActive(s.chat_enabled_at, s.chat_expires_at) ? "Chat Active" : "Chat Expired"}
+                    <div>
+                      <span className="font-extrabold text-white/85">Learner:</span> {s.learner_name || "Learner"}
                     </div>
+                    <div>
+                      <span className="font-extrabold text-white/85">Date:</span> {formatDateLocal(s.scheduled_date)}
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-white/85">Time:</span> {formatTimeOfDay(s.start_time)} - {formatTimeLocal(s.end_at)}
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-white/85">Duration:</span> {s.duration_minutes || 60} min
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-white/85">Chat ends on:</span> {formatDateTimeLocal(s.end_at)}
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    {(() => {
+                      if (!s.meeting_link) {
+                        return (
+                          <button type="button" className="btn-secondary w-full" disabled>
+                            Meeting link unavailable
+                          </button>
+                        );
+                      }
+
+                      if (timing.status === "completed") {
+                        return (
+                          <button type="button" className="btn-secondary w-full" disabled>
+                            Session Completed
+                          </button>
+                        );
+                      }
+
+                      if (timing.status === "upcoming") {
+                        return (
+                          <button type="button" className="btn-secondary w-full" disabled>
+                            {Number.isFinite(timing.startAtMs) ? countdownLabel(timing.startAtMs - nowMs) : "Starts soon"}
+                          </button>
+                        );
+                      }
+
+                      if (timing.status !== "active") {
+                        return (
+                          <button type="button" className="btn-secondary w-full" disabled>
+                            Join meeting unavailable
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <a className="btn-primary w-full text-center" href={s.meeting_link} target="_blank" rel="noreferrer">
+                          Join meeting
+                        </a>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="mt-3">
+                    {s.required_reviewed_user_id ? (
+                      <button
+                        type="button"
+                        className="btn-secondary w-full"
+                        onClick={() => {
+                          setReviewError("");
+                          setReviewFor(s);
+                          setReviewComment("");
+                          setReviewRating(5);
+                        }}
+                        disabled={timing.status !== "completed" || s.has_reviewed_required}
+                      >
+                        {s.has_reviewed_required
+                          ? "Review Submitted"
+                          : timing.status === "completed"
+                            ? "Leave review"
+                            : "Review available after session"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
-
-                <div className="mt-4 grid gap-2 text-sm text-white/70">
-                  <div>
-                    <span className="font-extrabold text-white/85">Teacher:</span>{" "}
-                    {s.teacher_name || "Teacher"}
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-white/85">Learner:</span>{" "}
-                    {s.learner_name || "Learner"}
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-white/85">Date:</span>{" "}
-                    {formatDateLocal(s.scheduled_date)}
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-white/85">Time:</span>{" "}
-                    {formatTimeOfDay(s.start_time)} - {formatTimeOfDay(s.end_time)}
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-white/85">Duration:</span>{" "}
-                    {s.duration_minutes || 60} min
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-white/85">Chat ends on:</span>{" "}
-                    {formatDateTimeLocal(s.chat_expires_at)}
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  {(() => {
-                    if (!s.meeting_link) {
-                      return (
-                        <button type="button" className="btn-secondary w-full" disabled>
-                          Meeting link unavailable
-                        </button>
-                      );
-                    }
-
-                    if (s.status !== "scheduled" && s.status !== "in_progress") {
-                      return (
-                        <button type="button" className="btn-secondary w-full" disabled>
-                          Session {s.status}
-                        </button>
-                      );
-                    }
-
-                    const start = buildLocalDateTime(s.scheduled_date, s.start_time);
-                    const end =
-                      buildLocalDateTime(s.scheduled_date, s.end_time) ||
-                      (start
-                        ? new Date(start.getTime() + (Number(s.duration_minutes) || 60) * 60000)
-                        : null);
-
-                    if (!start || !end) {
-                      return (
-                        <button type="button" className="btn-secondary w-full" disabled>
-                          Join meeting unavailable
-                        </button>
-                      );
-                    }
-
-                    if (nowMs < start.getTime()) {
-                      return (
-                        <button type="button" className="btn-secondary w-full" disabled>
-                          {countdownLabel(start.getTime() - nowMs)}
-                        </button>
-                      );
-                    }
-
-                    if (nowMs > end.getTime()) {
-                      return (
-                        <button type="button" className="btn-secondary w-full" disabled>
-                          Session Completed
-                        </button>
-                      );
-                    }
-
-                    return (
-                      <a className="btn-primary w-full text-center" href={s.meeting_link} target="_blank" rel="noreferrer">
-                        Join meeting
-                      </a>
-                    );
-                  })()}
-                </div>
-
-                <div className="mt-3">
-                  {s.required_reviewed_user_id ? (
-                    <button
-                      type="button"
-                      className="btn-secondary w-full"
-                      onClick={() => {
-                        setReviewError("");
-                        setReviewFor(s);
-                        setReviewComment("");
-                        setReviewRating(5);
-                      }}
-                      disabled={!s.can_review_now || s.has_reviewed_required}
-                    >
-                      {s.has_reviewed_required ? "Review Submitted" : s.can_review_now ? "Leave review" : "Review available after session"}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {sessions.length === 0 ? (
               <div className="glass p-6 text-sm font-semibold text-white/70 md:col-span-2">
