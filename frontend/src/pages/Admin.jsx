@@ -38,6 +38,15 @@ function tile(label, value, tone = "white") {
   );
 }
 
+function getUserDisplayName(user) {
+  const fullName = String(user.full_name || "").trim();
+  if (fullName) return fullName;
+  const email = String(user.email || "").trim();
+  if (!email) return "—";
+  const localPart = email.split("@")[0].trim();
+  return localPart || email;
+}
+
 export default function Admin() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, role, loading: authLoading } = useAuth();
@@ -324,7 +333,7 @@ export default function Admin() {
                             const selfMsg = "You cannot perform this action on your own account.";
                             return (
                               <>
-                          <td className="px-4 py-4 font-extrabold text-white">{u.full_name || "—"}</td>
+                          <td className="px-4 py-4 font-extrabold text-white">{getUserDisplayName(u)}</td>
                           <td className="px-4 py-4">{u.email || "—"}</td>
                           <td className="px-4 py-4">{u.role}</td>
                           <td className="px-4 py-4">{u.credits}</td>
@@ -757,7 +766,7 @@ export default function Admin() {
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-bold text-white/60">Name</div>
-                  <div className="mt-1 text-sm font-extrabold text-white">{userDetails.full_name || "—"}</div>
+                  <div className="mt-1 text-sm font-extrabold text-white">{getUserDisplayName(userDetails)}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-xs font-bold text-white/60">User ID</div>

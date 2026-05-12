@@ -48,7 +48,7 @@ async function listUsers({ search = null, limit = 50, offset = 0 }) {
   const result = await pool.query(
     "SELECT " +
       "r.auth_user_id AS user_id, " +
-      "COALESCE(p.full_name,'') AS full_name, " +
+      "COALESCE(NULLIF(p.full_name,''), split_part(p.email, '@', 1), '') AS full_name, " +
       "COALESCE(p.email,'') AS email, " +
       "COALESCE(r.role,'user') AS role, " +
       "COALESCE(p.credits,0)::int AS credits, " +
