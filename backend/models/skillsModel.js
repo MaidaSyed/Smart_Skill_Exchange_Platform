@@ -114,7 +114,7 @@ async function exploreSkills({ category, skillType, search, proficiency, sort })
   }
   if (search) {
     filters.push(
-      `(s.name ILIKE $${idx} OR COALESCE(p.full_name, '') ILIKE $${idx})`,
+      `(s.name ILIKE $${idx} OR COALESCE(p.full_name, '') ILIKE $${idx} OR COALESCE(p.email, '') ILIKE $${idx})`,
     );
     values.push(`%${search}%`);
     idx += 1;
@@ -122,12 +122,12 @@ async function exploreSkills({ category, skillType, search, proficiency, sort })
 
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
   const orderBy = (() => {
-    if (sort === "alpha") return "ORDER BY p.full_name ASC NULLS LAST, us.id DESC";
+    if (sort === "alpha") return "ORDER BY COALESCE(NULLIF(p.full_name, ''), NULLIF(split_part(p.email, '@', 1), ''), 'User') ASC, us.id DESC";
     if (sort === "rated") return "ORDER BY us.proficiency DESC, us.id DESC";
     return "ORDER BY us.created_at DESC, us.id DESC";
   })();
   const query =
-    "SELECT us.id AS user_skill_id, us.auth_user_id AS teacher_id, us.proficiency, us.created_at AS user_skill_created_at, s.name AS skill_name, s.category, s.skill_type, p.full_name, p.bio, r.role, COALESCE(req.requests_count, 0) AS requests_count, COALESCE(tp.teachers_per_skill, 0) AS teachers_per_skill, COALESCE(rv.avg_rating, 0) AS avg_rating, COALESCE(rv.reviews_count, 0) AS reviews_count, COALESCE(st.sessions_as_teacher, 0) AS sessions_as_teacher " +
+    "SELECT us.id AS user_skill_id, us.auth_user_id AS teacher_id, us.proficiency, us.created_at AS user_skill_created_at, s.name AS skill_name, s.category, s.skill_type, p.full_name, p.email, p.bio, r.role, COALESCE(req.requests_count, 0) AS requests_count, COALESCE(tp.teachers_per_skill, 0) AS teachers_per_skill, COALESCE(rv.avg_rating, 0) AS avg_rating, COALESCE(rv.reviews_count, 0) AS reviews_count, COALESCE(st.sessions_as_teacher, 0) AS sessions_as_teacher " +
     "FROM user_skills us " +
     "JOIN skills s ON s.id = us.skill_id " +
     "LEFT JOIN user_profiles p ON p.auth_user_id = us.auth_user_id " +

@@ -30,7 +30,10 @@ async function listSessionsForUser({ userId }) {
       ") END AS has_reviewed_required, " +
       "CASE WHEN now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN true ELSE false END AS can_review_now, " +
       "CASE WHEN now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) THEN true ELSE false END AS is_expired, " +
-      "us.proficiency, sk.name AS skill_name, sk.category, sk.skill_type, COALESCE(tp.full_name, 'Teacher') AS teacher_name, COALESCE(lp.full_name, 'Learner') AS learner_name " +
+      "us.proficiency, sk.name AS skill_name, sk.category, sk.skill_type, " +
+      "tp.email AS teacher_email, lp.email AS learner_email, " +
+      "COALESCE(NULLIF(tp.full_name, ''), NULLIF(split_part(tp.email, '@', 1), ''), 'Teacher') AS teacher_name, " +
+      "COALESCE(NULLIF(lp.full_name, ''), NULLIF(split_part(lp.email, '@', 1), ''), 'Learner') AS learner_name " +
       "FROM sessions s " +
       "JOIN learning_requests lr ON lr.id = s.request_id " +
       "JOIN user_skills us ON us.id = lr.user_skill_id " +

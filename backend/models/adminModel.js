@@ -41,6 +41,10 @@ async function listUsers({ search = null, limit = 50, offset = 0 }) {
   }
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
+  const limitParam = idx++;
+  const offsetParam = idx++;
+  values.push(safeLimit, safeOffset);
+
   const result = await pool.query(
     "SELECT " +
       "r.auth_user_id AS user_id, " +
@@ -54,8 +58,8 @@ async function listUsers({ search = null, limit = 50, offset = 0 }) {
       "LEFT JOIN user_profiles p ON p.auth_user_id = r.auth_user_id " +
       where +
       " ORDER BY joined_at DESC NULLS LAST, r.id DESC " +
-      " LIMIT $1 OFFSET $2",
-    values.length ? values.concat([safeLimit, safeOffset]) : [safeLimit, safeOffset],
+      ` LIMIT $${limitParam} OFFSET $${offsetParam}`,
+    values,
   );
   return result.rows || [];
 }

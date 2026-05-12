@@ -20,6 +20,7 @@ async function create(req, res) {
   }
 
   try {
+    console.log("Review attempt:", { sessionId, reviewerId, reviewedUserId, rating });
     const review = await reviewsModel.createReview({
       sessionId,
       reviewerId,
@@ -27,6 +28,7 @@ async function create(req, res) {
       rating,
       comment,
     });
+    console.log("Review result:", review);
     if (!review) {
       return res.status(400).json({ ok: false, error: "Review not allowed or invalid." });
     }

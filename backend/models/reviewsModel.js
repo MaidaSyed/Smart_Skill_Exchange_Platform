@@ -9,33 +9,77 @@ async function createReview({
   comment = null,
 }) {
   const ratingNum = Number(rating);
-  if (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5) return null;
+  if (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    console.log("Invalid rating:", rating);
+    return null;
+  }
 
   const session = await pool.query(
     "SELECT s.id, s.learner_id, s.teacher_id, lr.exchange_type, " +
-      "((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) AS end_at, " +
-      "(now() >= ((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute'))) AS ended " +
+      "((s.scheduled_date::timestamp + s.start_time) + (COALESCE(s.duration_minutes, 60)::int * interval '1 minute')) AS end_at " +
       "FROM sessions s JOIN learning_requests lr ON lr.id = s.request_id WHERE s.id = $1",
     [sessionId],
   );
   const s = session.rows?.[0] || null;
-  if (!s) return null;
-  if (!s.ended) return null;
+  if (!s) {
+    console.log("Session not found:", sessionId);
+    return null;
+  }
+
+  // Use the pre-calculated end time from the database (same as frontend uses)
+  // Session must be completed (ended) to allow review
+  const endAtMs = s.end_at ? new Date(s.end_at).getTime() : null;
+  const nowMs = Date.now();
+  
+  console.log("Session timing check:", {
+    sessionId,
+    endAt: s.end_at,
+    endAtMs,
+    nowMs,
+    isCompleted: nowMs >= endAtMs,
+  });
+
+  if (!Number.isFinite(endAtMs) || nowMs < endAtMs) {
+    console.log("Session not completed yet");
+    return null;
+  }
 
   const reviewer = String(reviewerId);
   const reviewed = String(reviewedUserId);
   const a = String(s.learner_id);
   const b = String(s.teacher_id);
 
-  if (!(reviewer === a || reviewer === b)) return null;
-  if (!(reviewed === a || reviewed === b)) return null;
-  if (reviewer === reviewed) return null;
+  if (!(reviewer === a || reviewer === b)) {
+    console.log("Reviewer not in session:", { reviewer, learner: a, teacher: b });
+    return null;
+  }
+  if (!(reviewed === a || reviewed === b)) {
+    console.log("Reviewed user not in session:", { reviewed, learner: a, teacher: b });
+    return null;
+  }
+  if (reviewer === reviewed) {
+    console.log("Cannot review yourself");
+    return null;
+  }
 
   const ex = String(s.exchange_type || "").toLowerCase();
   const allowed =
     (ex === "credits" && reviewer === a && reviewed === b) ||
     (ex === "skill" && ((reviewer === a && reviewed === b) || (reviewer === b && reviewed === a)));
-  if (!allowed) return null;
+  
+  console.log("Exchange type check:", {
+    exchangeType: ex,
+    reviewer,
+    reviewed,
+    learner: a,
+    teacher: b,
+    allowed,
+  });
+  
+  if (!allowed) {
+    console.log("Review not allowed for this exchange type");
+    return null;
+  }
 
   const existing = await pool.query(
     "SELECT id FROM reviews WHERE session_id = $1 AND reviewer_id = $2::uuid AND reviewed_user_id = $3::uuid LIMIT 1",

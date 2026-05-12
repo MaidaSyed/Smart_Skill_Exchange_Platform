@@ -6,8 +6,17 @@ import useAuth from "../context/useAuth.js";
 
 const Motion = motion;
 
-function initials(name) {
-  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+function displayName(name, email, fallback = "User") {
+  const trimmedName = String(name || "").trim();
+  if (trimmedName && trimmedName.toLowerCase() !== fallback.toLowerCase()) return trimmedName;
+  const emailLocalPart = String(email || "").trim().split("@")[0];
+  if (emailLocalPart) return emailLocalPart;
+  return fallback;
+}
+
+function initials(name, email) {
+  const resolvedName = displayName(name, email, "User");
+  const parts = String(resolvedName || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "U";
   const a = parts[0]?.[0] || "U";
   const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
@@ -185,11 +194,11 @@ export default function ExploreSkills() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500/40 to-cyan-400/25 text-sm font-extrabold text-white shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
-                      {initials(r.full_name)}
+                      {initials(r.full_name, r.email)}
                     </div>
                     <div>
                       <div className="text-lg font-extrabold text-white">
-                        {r.full_name || "User"}
+                        {displayName(r.full_name, r.email, "User")}
                       </div>
                       <div className="mt-1 text-xs font-semibold text-white/55">
                         {r.role || "user"}

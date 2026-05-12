@@ -23,6 +23,14 @@ function countdownLabel(msUntil) {
   return `Starts in ${hours}h ${String(minutes).padStart(2, "0")}m`;
 }
 
+function participantDisplayName(name, email, fallbackLabel) {
+  const trimmedName = String(name || "").trim();
+  if (trimmedName && trimmedName.toLowerCase() !== fallbackLabel.toLowerCase()) return trimmedName;
+  const emailLocalPart = String(email || "").trim().split("@")[0];
+  if (emailLocalPart) return emailLocalPart;
+  return fallbackLabel;
+}
+
 function getTiming(session, nowMs) {
   const dbStatus = String(session?.db_status || session?.status || "").toLowerCase();
   if (dbStatus === "cancelled") return { status: "cancelled", startAtMs: Number.NaN, endAtMs: Number.NaN };
@@ -95,9 +103,13 @@ export default function Sessions() {
   const reviewedName = useMemo(() => {
     if (!reviewFor || !userId) return "";
     if (reviewFor.required_reviewed_user_id) {
-      return String(reviewFor.required_reviewed_user_id) === String(reviewFor.teacher_id) ? reviewFor.teacher_name : reviewFor.learner_name;
+      return String(reviewFor.required_reviewed_user_id) === String(reviewFor.teacher_id)
+        ? participantDisplayName(reviewFor.teacher_name, reviewFor.teacher_email, "Teacher")
+        : participantDisplayName(reviewFor.learner_name, reviewFor.learner_email, "Learner");
     }
-    return String(reviewFor.teacher_id) === String(userId) ? reviewFor.learner_name : reviewFor.teacher_name;
+    return String(reviewFor.teacher_id) === String(userId)
+      ? participantDisplayName(reviewFor.learner_name, reviewFor.learner_email, "Learner")
+      : participantDisplayName(reviewFor.teacher_name, reviewFor.teacher_email, "Teacher");
   }, [reviewFor, userId]);
 
   const submitReview = () => {
@@ -243,6 +255,8 @@ export default function Sessions() {
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             {sessions.map((s) => {
               const timing = getTiming(s, nowMs);
+              const teacherDisplayName = participantDisplayName(s.teacher_name, s.teacher_email, "Teacher");
+              const learnerDisplayName = participantDisplayName(s.learner_name, s.learner_email, "Learner");
               const statusText =
                 timing.status === "active"
                   ? "Session Live Now"
@@ -291,10 +305,10 @@ export default function Sessions() {
 
                   <div className="mt-4 grid gap-2 text-sm text-white/70">
                     <div>
-                      <span className="font-extrabold text-white/85">Teacher:</span> {s.teacher_name || "Teacher"}
+                      <span className="font-extrabold text-white/85">Teacher:</span> {teacherDisplayName}
                     </div>
                     <div>
-                      <span className="font-extrabold text-white/85">Learner:</span> {s.learner_name || "Learner"}
+                      <span className="font-extrabold text-white/85">Learner:</span> {learnerDisplayName}
                     </div>
                     <div>
                       <span className="font-extrabold text-white/85">Date:</span> {formatDateLocal(s.scheduled_date)}
@@ -363,7 +377,7 @@ export default function Sessions() {
                           setReviewComment("");
                           setReviewRating(5);
                         }}
-                        disabled={timing.status !== "completed" || s.has_reviewed_required}
+                        disabled={!(timing.status === "completed" && !s.has_reviewed_required)}
                       >
                         {s.has_reviewed_required
                           ? "Review Submitted"
